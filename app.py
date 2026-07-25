@@ -18,16 +18,19 @@ MODE_COLORS = {
 def index():
     return render_template("dashboard.html")
 
-@app.route("/trigger", methods=["POST"])
-def trigger():
-    scenario["type"] = request.json.get("event", "normal")
-    return jsonify({"ok": True})
+# WebSocket Event Handler (Bypasses localtunnel's proxy interception entirely)
+@socketio.on("change_scenario")
+def handle_change_scenario(data):
+    scenario["type"] = data.get("event", "normal")
+    print(f"⚠️ Scenario dynamically shifted to: {scenario['type']}")
 
 def loop():
     global step, irr_window
     while True:
         snap        = snapshot(step)
         irr_window  = (irr_window + [snap["solar_w"]])[-24:]
+
+        # Calls the updated TFLite decision engine
         predicted_w = predict_next_hour(irr_window)
         sw          = compute_survival_window(snap["battery_soc"], snap["iron_w"])
         mode        = run_triage(sw)
