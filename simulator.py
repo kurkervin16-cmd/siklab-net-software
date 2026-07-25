@@ -1,58 +1,51 @@
-import json, numpy as np
-from datetime import datetime
+from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO
+import threading, time
+from simulator import snapshot, scenario
+from decision_engine import predict_next_hour, compute_survival_window, run_triage
 
-with open("data/solar_data.json") as f:
-    raw = json.load(f)
-irr_values = [max(0, v) for v in raw.values()]
+app      = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-relay_states = {
-    "iron_vaccine":        True,
-    "iron_water_pump":     True,
-    "iron_comms":          True,
-    "priority_health":     True,
-    "priority_gov":        True,
-    "defer_residential_a": True,
-    "defer_residential_b": True,
-    "defer_commercial":    True,
+step, irr_window = 0, [300.0] * 24
+MODE_COLORS = {
+    "NORMAL":       "#2ecc71",
+    "CONSERVATION": "#f39c12",
+    "CRITICAL":     "#e74c3c"
 }
 
-battery = {"soc_pct": 80.0, "voltage_v": 12.5, "capacity_wh": 5000}
-scenario = {"type": "normal"}
+@app.route("/")
+def index():
+    return render_template("dashboard.html")
 
-def get_solar_w(step=0):
-    if scenario["type"] == "drop":
-        return 25.0
-    return max(0, irr_values[step % len(irr_values)] * 0.5)
+# WebSocket Event Handler (Bypasses localtunnel's proxy interception entirely)
+@socketio.on("change_scenario")
+def handle_change_scenario(data):
+    scenario["type"] = data.get("event", "normal")
+    print(f"⚠️ Scenario dynamically shifted to: {scenario['type']}")
 
-def get_loads():
-    return {
-        "iron_w":     220,
-        "priority_w": 150 if relay_states["priority_health"] else 0,
-        "defer_w":    300 if relay_states["defer_residential_a"] else 0,
-    }
+def loop():
+    global step, irr_window
+    while True:
+        snap        = snapshot(step)
+        irr_window  = (irr_window + [snap["solar_w"]])[-24:]
 
-def update_battery(solar_w, total_w, dt_min=5):
-    net_w    = solar_w - total_w
-    delta_wh = net_w * (dt_min / 60)
-    battery["soc_pct"] = max(0, min(100, battery["soc_pct"] + (delta_wh / battery["capacity_wh"]) * 100))
-    battery["voltage_v"] = 11.5 + (battery["soc_pct"] / 100) * 1.2
+        # Calls the updated TFLite decision engine
+        predicted_w = predict_next_hour(irr_window)
+        sw          = compute_survival_window(snap["battery_soc"], snap["iron_w"])
+        mode        = run_triage(sw)
 
-def set_relay(name, state):
-    if name.startswith("iron_"):
-        return
-    relay_states[name] = state
+        socketio.emit("update", {
+            **snap,
+            "sw":          sw,
+            "mode":        mode,
+            "mode_color":  MODE_COLORS[mode],
+            "predicted_w": round(predicted_w, 1),
+        })
+        step += 1
+        time.sleep(3)
 
-def snapshot(step=0):
-    solar_w = get_solar_w(step)
-    loads   = get_loads()
-    update_battery(solar_w, sum(loads.values()))
-    return {
-        "solar_w":      round(solar_w, 1),
-        "battery_soc":  round(battery["soc_pct"], 1),
-        "battery_v":    round(battery["voltage_v"], 2),
-        "iron_w":       loads["iron_w"],
-        "priority_w":   loads["priority_w"],
-        "defer_w":      loads["defer_w"],
-        "relay_states": relay_states.copy(),
-        "timestamp":    datetime.now().strftime("%H:%M:%S"),
-    }
+threading.Thread(target=loop, daemon=True).start()
+
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
