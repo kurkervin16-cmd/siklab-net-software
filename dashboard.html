@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SIKLAB Net</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:sans-serif;background:#0d1b2a;color:#fff;padding:24px}
+    h1{font-size:16px;color:#b8d4f0;margin-bottom:20px}
+    .sw-block{text-align:center;margin:20px 0}
+    .sw-number{font-size:80px;font-weight:800;color:#f0a500;line-height:1}
+    .sw-label{color:#888;font-size:12px;margin-top:6px}
+    .mode-badge{display:inline-block;padding:8px 28px;border-radius:20px;
+                font-weight:700;font-size:18px;margin:10px auto;transition:background .4s}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+    .stat-card{background:#1a3a6b;border-radius:10px;padding:14px;text-align:center}
+    .stat-card .label{font-size:10px;color:#888;margin-bottom:4px}
+    .stat-card .value{font-size:22px;font-weight:700}
+    .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+    .tier-card{border-radius:10px;padding:12px}
+    .tier-card .tier-name{font-weight:700;font-size:12px;margin-bottom:8px}
+    .relay-row{display:flex;justify-content:space-between;font-size:11px;margin:3px 0}
+    .on{color:#2ecc71;font-weight:600}
+    .off{color:#e74c3c;font-weight:600}
+    .iron-card{background:rgba(192,57,43,.15);border:1px solid #c0392b}
+    .priority-card{background:rgba(212,130,10,.15);border:1px solid #d4820a}
+    .defer-card{background:rgba(46,125,50,.15);border:1px solid #2e7d32}
+    .buttons{display:flex;gap:12px;justify-content:center;margin:20px 0}
+    .btn{padding:12px 28px;font-size:14px;font-weight:600;border:none;
+         border-radius:8px;cursor:pointer}
+    .btn-storm{background:#e74c3c;color:#fff}
+    .btn-restore{background:#2ecc71;color:#fff}
+    .ts{text-align:center;color:#444;font-size:10px;margin-top:8px}
+  </style>
+</head>
+<body>
+  <h1>⚡ SIKLAB Net — Edge AI Grid Controller | Signal2Noise</h1>
+  <div class="sw-block">
+    <div class="sw-number" id="sw">--</div>
+    <div class="sw-label">hours of critical infrastructure power remaining</div>
+    <div><span class="mode-badge" id="mode" style="background:#2ecc71">NORMAL</span></div>
+  </div>
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">☀️ Solar Generation</div>
+      <div class="value"><span id="solar">--</span> W</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">🔋 Battery SoC</div>
+      <div class="value"><span id="batt">--</span> %</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">🔮 AI Forecast (next hr)</div>
+      <div class="value"><span id="pred">--</span> W</div>
+    </div>
+  </div>
+  <div class="tiers">
+    <div class="tier-card iron-card">
+      <div class="tier-name">🔴 IRON Tier</div>
+      <div class="relay-row">Vaccine fridge <span id="r_vaccine">--</span></div>
+      <div class="relay-row">Water pump <span id="r_pump">--</span></div>
+      <div class="relay-row">Emergency comms <span id="r_comms">--</span></div>
+    </div>
+    <div class="tier-card priority-card">
+      <div class="tier-name">🟡 PRIORITY Tier</div>
+      <div class="relay-row">Health center <span id="r_health">--</span></div>
+      <div class="relay-row">Gov office <span id="r_gov">--</span></div>
+    </div>
+    <div class="tier-card defer-card">
+      <div class="tier-name">🟢 DEFERRABLE Tier</div>
+      <div class="relay-row">Residential A <span id="r_resa">--</span></div>
+      <div class="relay-row">Residential B <span id="r_resb">--</span></div>
+      <div class="relay-row">Commercial <span id="r_com">--</span></div>
+    </div>
+  </div>
+  <div class="buttons">
+    <button class="btn btn-storm"   onclick="trigger('drop')">☁️ Trigger Storm Event</button>
+    <button class="btn btn-restore" onclick="trigger('normal')">☀️ Restore Generation</button>
+  </div>
+  <div class="ts" id="ts">--</div>
+<script>
+  const socket = io();
+
+  function updateRelayDOM(elementId, state) {
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.textContent = state ? "ON" : "OFF";
+      el.className = state ? "on" : "off";
+    }
+  }
+
+  socket.on("update", d => {
+    document.getElementById("sw").textContent    = d.sw.toFixed(1);
+    document.getElementById("solar").textContent = d.solar_w;
+    document.getElementById("batt").textContent  = d.battery_soc;
+    document.getElementById("pred").textContent  = d.predicted_w;
+    document.getElementById("ts").textContent    = "Last update: " + d.timestamp;
+
+    const m = document.getElementById("mode");
+    m.textContent = d.mode;
+    m.style.background = d.mode_color;
+
+    const rs = d.relay_states;
+    updateRelayDOM("r_vaccine", rs.iron_vaccine);
+    updateRelayDOM("r_pump", rs.iron_water_pump);
+    updateRelayDOM("r_comms", rs.iron_comms);
+    updateRelayDOM("r_health", rs.priority_health);
+    updateRelayDOM("r_gov", rs.priority_gov);
+    updateRelayDOM("r_resa", rs.defer_residential_a);
+    updateRelayDOM("r_resb", rs.defer_residential_b);
+    updateRelayDOM("r_com", rs.defer_commercial);
+  });
+
+  function trigger(e){
+    fetch("/trigger",{
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Reminder": "true"
+      },
+      body: JSON.stringify({event: e})
+    })
+    .then(r => r.json())
+    .catch(err => console.error("Trigger Failed:", err));
+  }
+</script>
+</body></html>
