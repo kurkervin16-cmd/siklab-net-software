@@ -1,5 +1,15 @@
-# siklab-net-software
-An offline-first Edge AI microgrid controller that uses TFLite solar forecasting to dynamically shed loads and keep critical infrastructure alive during disasters.
+## Setup
+pip install tensorflow flask flask-socketio numpy requests
+python app.py → http://localhost:5000
+
+## Demo
+1. Open dashboard
+2. Click Trigger Storm Event
+3. Watch AI shed non-critical loads — IRON tier stays ON
+
+## Stack
+Keras LSTM | NASA POWER LARC | Flask + Socket.IO
+RMSE: 29.22 W/m² | MAE: 15.79 W/m²
 
 # ⚡ SIKLAB Net — Edge AI Grid Controller
 
