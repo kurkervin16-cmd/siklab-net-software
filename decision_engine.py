@@ -1,9 +1,9 @@
 import numpy as np
-import tensorflow as tf
+import tensorflow as tf  
 from simulator import set_relay
 
 # Initialize the ultra-lightweight TFLite interpreter
-interpreter = tf.lite.Interpreter(model_path="model/siklab_model.tflite")
+interpreter = tf.lite. Interpreter(model_path="model/siklab_model.tflite")
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
